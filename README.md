@@ -1,21 +1,24 @@
 # XiaoV2B Client - V2Board 客户端
 
-一个基于 Flutter 开发的跨平台 V2Board VPN 客户端，已对接完整 API。
+一个基于 Flutter 开发的跨平台 V2Board 客户端，已接入 Mihomo 内核与完整 API。
 
 ![动画](https://github.com/user-attachments/assets/d3711d6b-e5a8-463a-afe3-8385de55f536)
 
 ## ⚠️ 重要说明
 
 - ✅ **全部代码由 AI 代写**
-- ⚠️ **节点列表目前根据订阅连接获取，二开之前记得修改为读取本地配置文件**
+- ✅ 订阅连接会以 `flag=meta` 请求 Clash.Meta/Mihomo 配置
+- ⚠️ 首次在 Android 连接时需要用户授予系统 VPN 权限
+- ⚠️ 桌面端使用系统 HTTP/HTTPS/SOCKS 代理，不会透明接管不遵循系统代理的程序
 
 ## 📱 支持平台
 
-- ✅ Windows
-- ✅ macOS  
-- ✅ Linux
-- ✅ Android
-- ✅ iOS
+- ✅ Windows（Mihomo mixed-port + 可恢复的系统代理）
+- ✅ macOS（Mihomo mixed-port + 可恢复的系统代理）
+- ✅ Linux/GNOME（Mihomo mixed-port + `gsettings` 系统代理）
+- ✅ Android（`VpnService` + Mihomo userspace TUN）
+- ⚠️ iOS（现有 UI/API 可构建，尚未接入 Network Extension）
+- ⚠️ Web（现有 UI/API 可运行，不支持本地 VPN 内核）
 
 ## 🚀 主要功能
 
@@ -28,6 +31,10 @@
 - 邀请码系统
 - 工单系统
 - 公告通知
+- Mihomo v1.19.30 内核生命周期管理
+- Rule/Global 模式切换
+- 连接中实时切换 Selector 节点
+- 异常退出后恢复桌面系统代理
 
 ### OSS 动态配置
 OSS 配置见另一个仓库：[APIOSS](https://github.com/sunyuchentrx/APIOSS)
@@ -87,26 +94,36 @@ flutter pub run flutter_launcher_icons
 ### 环境要求
 - Flutter SDK >= 3.10.1
 - Dart SDK >= 3.10.1
+- Android 构建另需 Go 1.25 与 Android NDK `28.0.13004108`
+- 桌面内核由下载脚本从 Mihomo 官方 Release 获取并校验 SHA-256
 
 ### Windows
 ```bash
+python tool/fetch_mihomo.py --platform windows --arch amd64
 flutter build windows --release
 ```
 
 ### Android
 ```bash
+export ANDROID_NDK_HOME=/path/to/android-ndk/28.0.13004108
+bash tool/build_android_core.sh
 flutter build apk --release
 ```
 
 ### macOS
 ```bash
+python3 tool/fetch_mihomo.py --platform macos --arch universal
 flutter build macos --release
 ```
 
-### iOS
+### Linux
 ```bash
-flutter build ios --release
+python3 tool/fetch_mihomo.py --platform linux --arch amd64
+flutter build linux --release
 ```
+
+GitHub Actions 会执行配置测试，并构建 Android、Windows、macOS 和 Linux
+四个平台的可下载产物。内核二进制不会提交到 Git 仓库。
 
 
 ## 📁 项目结构
@@ -127,7 +144,8 @@ lib/
 │   └── language_provider.dart  # 语言切换
 ├── services/                    # 服务层
 │   ├── api_service.dart        # API 服务
-│   └── config_service.dart     # 配置服务（OSS）
+│   ├── config_service.dart     # 配置服务（OSS）
+│   └── mihomo/                 # 内核配置、控制器及各平台后端
 ├── theme/                       # 主题
 │   └── app_theme.dart          # 应用主题配置
 └── widgets/                     # 通用组件
@@ -151,13 +169,23 @@ lib/
 
 具体 API 实现见 `lib/services/api_service.dart`
 
+## 🧩 Mihomo 实现说明
+
+- 控制器固定监听 `127.0.0.1:19090`，并使用随机持久化 secret 鉴权。
+- mixed-port 固定为 `127.0.0.1:17890`，`allow-lan` 强制关闭。
+- Android 由系统 `VpnService` 创建 TUN，应用 UID 被排除，内核出站 socket
+  仍会调用 `VpnService.protect()` 防止路由回环。
+- Windows/macOS/Linux 在连接前保存原系统代理，断开或内核异常退出时恢复。
+- macOS 为了启动子进程并调用 `networksetup`，目标采用站外分发配置且未启用
+  App Sandbox；如需上架 Mac App Store，需要改用受支持的 Network Extension。
+- 订阅必须返回 Clash/Mihomo YAML；仅有通用 URI 列表的订阅无法启动。
+
 ## 📝 待优化项
 
-- [ ] 改为读取本地配置文件获取节点列表
 - [ ] 实现节点延迟测试（Ping）
-- [ ] 实现真实的 VPN 连接功能
-- [ ] 优化错误处理
 - [ ] 添加自动重连机制
+- [ ] iOS Network Extension / Packet Tunnel 接入
+- [ ] 非 GNOME Linux 桌面代理适配
 
 ## 🤝 贡献
 
@@ -172,7 +200,9 @@ lib/
 
 ## 📄 许可证
 
-本项目仅供学习交流使用
+本项目采用 [GNU GPL v3](LICENSE)。Mihomo 的版本、来源、校验与构建方式见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。分发修改后的应用时必须同时
+遵守 GPL-3.0 的源码与许可证义务。
 
 ## 🔗 相关项目
 

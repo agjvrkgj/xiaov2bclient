@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Pinned Mihomo binaries are fetched during CI/release builds.
+/assets/core/windows/mihomo.exe
+/assets/core/macos/mihomo
+/assets/core/linux/mihomo
+/android/core/src/main/jniLibs/**/libmihomo.so
+/android/core/src/main/jniLibs/**/libmihomo.h

@@ -6,11 +6,13 @@ import '../providers/language_provider.dart';
 class ConnectButton extends StatefulWidget {
   final VoidCallback onPressed;
   final bool isConnected;
+  final bool isLoading;
 
   const ConnectButton({
     super.key,
     required this.onPressed,
     required this.isConnected,
+    this.isLoading = false,
   });
 
   @override
@@ -52,7 +54,7 @@ class _ConnectButtonState extends State<ConnectButton> with SingleTickerProvider
     final lang = Provider.of<LanguageProvider>(context);
 
     return GestureDetector(
-      onTap: widget.onPressed,
+      onTap: widget.isLoading ? null : widget.onPressed,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -106,14 +108,28 @@ class _ConnectButtonState extends State<ConnectButton> with SingleTickerProvider
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.power_settings_new_rounded,
-                        size: 48,
-                        color: Colors.white,
-                      ),
+                      if (widget.isLoading)
+                        const SizedBox(
+                          width: 42,
+                          height: 42,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: Colors.white,
+                          ),
+                        )
+                      else
+                        const Icon(
+                          Icons.power_settings_new_rounded,
+                          size: 48,
+                          color: Colors.white,
+                        ),
                       const SizedBox(height: 8),
                       Text(
-                        widget.isConnected ? lang.getText('stop') : lang.getText('start'),
+                        widget.isLoading
+                            ? lang.getText('connecting')
+                            : widget.isConnected
+                                ? lang.getText('stop')
+                                : lang.getText('start'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
