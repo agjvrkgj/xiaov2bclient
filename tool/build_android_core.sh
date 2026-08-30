@@ -63,7 +63,10 @@ build_abi() {
 
 (
   cd "${PROJECT_DIRECTORY}/core"
-  go mod download
+  # main.go is Android-only, so an unqualified download on a Linux host only
+  # fetches the direct module. Download the complete graph to populate go.sum
+  # before the cross-compiled build runs in module read-only mode.
+  go mod download all
 )
 
 build_abi "arm64-v8a" "arm64" "aarch64-linux-android"
