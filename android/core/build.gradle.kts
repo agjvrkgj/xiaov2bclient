@@ -10,6 +10,12 @@ android {
 
     defaultConfig {
         minSdk = 21
+        ndk {
+            // The Go bridge is built only for Flutter's supported release
+            // ABIs. Excluding legacy x86 keeps CMake from requesting a
+            // libmihomo.so that the build script intentionally does not make.
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+        }
         consumerProguardFiles("proguard-rules.pro")
     }
 
