@@ -1,0 +1,2 @@
+-keep class com.example.vpn_ui_demo.core.MihomoCore { *; }
+-keep interface com.example.vpn_ui_demo.core.TunInterface { *; }

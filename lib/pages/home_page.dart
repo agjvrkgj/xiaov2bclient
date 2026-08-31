@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../providers/language_provider.dart';
 import '../services/api_service.dart';
+import '../services/mihomo/mihomo_service.dart';
 import '../widgets/connect_button.dart';
 import '../widgets/server_card.dart';
 
@@ -21,7 +22,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  bool _isConnected = false;
+  final MihomoService _mihomo = MihomoService();
   String _connectionTime = '00:00:00';
   Timer? _timer;
   int _seconds = 0;
@@ -36,10 +37,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Map<String, dynamic>? _selectedServer;
   bool _isLoadingServers = false;
 
+  bool get _isConnected => _mihomo.isConnected;
+  bool get _isConnectionBusy => _mihomo.isBusy;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _mihomo.addListener(_onMihomoChanged);
+    unawaited(_initializeMihomo());
     _fetchSubscribe();
     _fetchServers();
     _checkNotices();
@@ -66,6 +72,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
       _fetchSubscribe();
       _fetchServers();
+      unawaited(_mihomo.refreshStatus());
+    } else if (state == AppLifecycleState.detached) {
+      unawaited(_mihomo.shutdownOnDesktopExit());
+    }
+  }
+
+  Future<void> _initializeMihomo() async {
+    await _mihomo.initialize();
+    _onMihomoChanged();
+    if (!mounted) return;
+    await _fetchServers();
+  }
+
+  void _onMihomoChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_mihomo.isConnected) {
+      _startTimer();
+    } else {
+      _stopTimer();
     }
   }
 
@@ -93,6 +119,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _fetchServers() async {
+    if (!mounted) return;
     setState(() => _isLoadingServers = true);
     final servers = await ApiService().fetchServerNodes();
     if (mounted) {
@@ -100,8 +127,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _isLoadingServers = false;
         if (servers != null && servers.isNotEmpty) {
           _serverList = servers;
-          // Default to the first server if none selected
-          _selectedServer ??= servers[0];
+          if (_selectedServer == null) {
+            final savedName = _mihomo.selectedProxy;
+            if (savedName != null) {
+              for (final server in servers) {
+                if (server is Map && server['name']?.toString() == savedName) {
+                  _selectedServer = Map<String, dynamic>.from(server);
+                  break;
+                }
+              }
+            }
+            _selectedServer ??= Map<String, dynamic>.from(servers[0]);
+          }
         }
       });
     }
@@ -165,22 +202,52 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return '${size.toStringAsFixed(2)} ${suffixes[i]}';
   }
 
-  void _toggleConnection() {
-    setState(() {
-      _isConnected = !_isConnected;
+  Future<void> _toggleConnection() async {
+    if (_isConnectionBusy) return;
+    try {
       if (_isConnected) {
-        _startTimer();
+        await _mihomo.disconnect();
       } else {
-        _stopTimer();
+        if (_selectedServer == null) {
+          throw const MihomoOperationException('请先选择一个节点');
+        }
+        await _mihomo.connect(
+          selectedProxy: _selectedServer!['name']?.toString(),
+        );
+        if (_mihomo.lastError != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_mihomo.lastError!)),
+          );
+        }
       }
-    });
+    } on MihomoOperationException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   void _startTimer() {
-    _seconds = 0;
+    _timer?.cancel();
+    final connectedAt = _mihomo.connectedAt ?? DateTime.now();
+    _seconds = DateTime.now()
+        .difference(connectedAt)
+        .inSeconds
+        .clamp(0, 1 << 31)
+        .toInt();
+    _connectionTime = _formatTime(_seconds);
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
       setState(() {
-        _seconds++;
+        _seconds = DateTime.now()
+            .difference(connectedAt)
+            .inSeconds
+            .clamp(0, 1 << 31)
+            .toInt();
         _connectionTime = _formatTime(_seconds);
       });
     });
@@ -188,9 +255,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _stopTimer() {
     _timer?.cancel();
-    setState(() {
-      _connectionTime = '00:00:00';
-    });
+    _timer = null;
+    _connectionTime = '00:00:00';
   }
 
   String _formatTime(int seconds) {
@@ -203,12 +269,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _mihomo.removeListener(_onMihomoChanged);
     _timer?.cancel();
     super.dispose();
   }
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
+    final statusText = switch (_mihomo.state) {
+      MihomoConnectionState.connecting => lang.getText('connecting'),
+      MihomoConnectionState.disconnecting => lang.getText('disconnecting'),
+      MihomoConnectionState.connected => lang.getText('connected'),
+      _ => lang.getText('not_connected'),
+    };
+    final statusColor = _isConnectionBusy
+        ? Colors.orangeAccent
+        : _isConnected
+            ? AppTheme.primaryColor
+            : Colors.grey;
 
     return CustomWindowBar(
       child: Scaffold(
@@ -243,7 +321,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: _isConnected ? AppTheme.primaryColor.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+              color: (_isConnected || _isConnectionBusy)
+                  ? statusColor.withOpacity(0.1)
+                  : Colors.white.withOpacity(0.05),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -254,14 +334,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   height: 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _isConnected ? AppTheme.primaryColor : Colors.grey,
+                    color: statusColor,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  _isConnected ? lang.getText('connected') : lang.getText('not_connected'),
+                  statusText,
                   style: TextStyle(
-                    color: _isConnected ? AppTheme.primaryColor : Colors.grey,
+                    color: statusColor,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -320,6 +400,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               height: 240,
               child: ConnectButton(
                 isConnected: _isConnected,
+                isLoading: _isConnectionBusy,
                 onPressed: _toggleConnection,
               ),
             ),
@@ -334,7 +415,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               countryName: _selectedServer != null ? _selectedServer!['name'] : 'Select Server',
               flagEmoji: '🌐', // We might need a way to map country codes to flags later
               latency: 'Auto', // Real latency pinging is a future task
-              onTap: () {
+              onTap: _isConnectionBusy ? () {} : () {
                 showModalBottomSheet(
                   context: context,
                   backgroundColor: Colors.transparent,
@@ -399,16 +480,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildServerItem(dynamic serverData) {
     final server = Map<String, dynamic>.from(serverData);
-    final isSelected = _selectedServer == server;
+    final isSelected = _selectedServer?['name']?.toString() ==
+        server['name']?.toString();
     return ListTile(
       leading: const Text('🌐', style: TextStyle(fontSize: 24)),
       title: Text(server['name'] ?? 'Unknown', style: const TextStyle(color: Colors.white)),
       trailing: isSelected 
           ? const Icon(Icons.check_circle, color: AppTheme.primaryColor)
           : null,
-      onTap: () {
-        setState(() => _selectedServer = server);
-        Navigator.pop(context);
+      onTap: () async {
+        try {
+          if (_isConnected) {
+            await _mihomo.selectProxy(server['name']?.toString() ?? '');
+          }
+          if (!mounted) return;
+          setState(() => _selectedServer = server);
+          Navigator.pop(context);
+        } on MihomoOperationException catch (error) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error.message),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       },
     );
   }

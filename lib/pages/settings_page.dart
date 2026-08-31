@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_window_bar.dart';
 import '../providers/language_provider.dart';
+import '../services/mihomo/mihomo_constants.dart';
+import '../services/mihomo/mihomo_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -12,7 +14,20 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  final MihomoService _mihomo = MihomoService();
   String _outboundMode = 'rule'; // 'rule' or 'global'
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMihomoSettings();
+  }
+
+  Future<void> _loadMihomoSettings() async {
+    await _mihomo.initialize();
+    if (!mounted) return;
+    setState(() => _outboundMode = _mihomo.mode);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +75,10 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           ListTile(
             title: Text(lang.getText('version'), style: TextStyle(color: textColor)),
-            subtitle: Text('1.0.0', style: TextStyle(color: subTextColor)),
+            subtitle: Text(
+              'Mihomo ${_mihomo.coreVersion ?? MihomoConstants.version}',
+              style: TextStyle(color: subTextColor),
+            ),
           ),
         ],
       ),
@@ -97,9 +115,9 @@ class _SettingsPageState extends State<SettingsPage> {
               value: 'rule',
               groupValue: _outboundMode,
               activeColor: AppTheme.primaryColor,
-              onChanged: (val) {
-                setState(() => _outboundMode = val!);
+              onChanged: (val) async {
                 Navigator.pop(context);
+                if (val != null) await _changeOutboundMode(val);
               },
             ),
             RadioListTile<String>(
@@ -107,9 +125,9 @@ class _SettingsPageState extends State<SettingsPage> {
               value: 'global',
               groupValue: _outboundMode,
               activeColor: AppTheme.primaryColor,
-              onChanged: (val) {
-                setState(() => _outboundMode = val!);
+              onChanged: (val) async {
                 Navigator.pop(context);
+                if (val != null) await _changeOutboundMode(val);
               },
             ),
           ],
@@ -122,6 +140,23 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _changeOutboundMode(String value) async {
+    final previous = _outboundMode;
+    setState(() => _outboundMode = value);
+    try {
+      await _mihomo.setMode(value);
+    } on MihomoOperationException catch (error) {
+      if (!mounted) return;
+      setState(() => _outboundMode = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   void _showLanguageDialog(BuildContext context, LanguageProvider lang, Color textColor) {

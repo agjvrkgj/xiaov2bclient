@@ -49,14 +49,14 @@ Future<void> _updateAppName(String newName) async {
     await _updateFile(
       path,
       RegExp(r'(<key>CFBundleDisplayName</key>\s*<string>)[^<]*(</string>)'),
-      (match) => '${match.group(1)}$newName${match.group(2)}',
+      (Match match) => '${match.group(1)}$newName${match.group(2)}',
       '$path (CFBundleDisplayName)',
       isRegexReplace: true,
     );
     await _updateFile(
       path,
       RegExp(r'(<key>CFBundleName</key>\s*<string>)[^<]*(</string>)'),
-      (match) => '${match.group(1)}$newName${match.group(2)}',
+      (Match match) => '${match.group(1)}$newName${match.group(2)}',
       '$path (CFBundleName)',
       isRegexReplace: true,
     );
@@ -88,7 +88,7 @@ Future<void> _updateAppName(String newName) async {
   await _updateFile(
     'windows/runner/main.cpp',
     RegExp(r'window.Create\([^\)]*\)'),
-    (match) {
+    (Match match) {
        // Replace the title string inside window.Create(L"...", ...)
        // This is a bit tricky with regex, assuming standard Flutter template:
        // window.Create(L"window_title", origin, size)
@@ -160,6 +160,11 @@ Future<void> _generateIcons(Map config) async {
     return;
   }
 
+  if (!await File(imagePath).exists()) {
+    print('  - ⚠️ 图标文件不存在: $imagePath，跳过图标生成');
+    return;
+  }
+
   final buffer = StringBuffer();
   buffer.writeln('flutter_launcher_icons:');
   buffer.writeln('  android: ${config['android'] ?? true}');
@@ -171,7 +176,13 @@ Future<void> _generateIcons(Map config) async {
   final iconConfigFile = File('flutter_launcher_icons.yaml');
   await iconConfigFile.writeAsString(buffer.toString());
   
-  final result = await Process.run('flutter', ['pub', 'run', 'flutter_launcher_icons']);
+  final result = await Process.run(
+    'flutter',
+    ['pub', 'run', 'flutter_launcher_icons'],
+    // Windows does not resolve flutter.bat through Process.run unless the
+    // command is launched via the system shell.
+    runInShell: Platform.isWindows,
+  );
   
   if (result.exitCode == 0) {
     print('  - ✅ 移动端图标生成成功');
@@ -186,7 +197,7 @@ Future<void> _generateIcons(Map config) async {
 Future<void> _updateFile(
   String path,
   RegExp regex,
-  dynamic replacement, // String or String Function(Match)
+  Object replacement, // String or String Function(Match)
   String description, {
   bool isRegexReplace = false,
 }) async {
@@ -199,10 +210,16 @@ Future<void> _updateFile(
   try {
     var content = await file.readAsString();
     if (regex.hasMatch(content)) {
-      if (isRegexReplace && replacement is Function) {
-        content = content.replaceAllMapped(regex, replacement as String Function(Match));
+      if (isRegexReplace && replacement is String Function(Match)) {
+        content = content.replaceAllMapped(regex, replacement);
       } else if (replacement is String) {
         content = content.replaceAll(regex, replacement);
+      } else {
+        throw ArgumentError.value(
+          replacement,
+          'replacement',
+          'must be a String or String Function(Match)',
+        );
       }
       await file.writeAsString(content);
       print('  - ✅ $description 更新成功');

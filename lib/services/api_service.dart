@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'config_service.dart';
-import 'config_service.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
@@ -152,6 +151,49 @@ class ApiService {
       return result;
     }
     return null;
+  }
+
+  Future<String> fetchMihomoSubscription() async {
+    final subscribe = await getSubscribe();
+    final rawUrl = subscribe?['data']?['subscribe_url']?.toString();
+    if (rawUrl == null || rawUrl.isEmpty) {
+      throw StateError('账户没有可用的订阅地址');
+    }
+
+    final parsed = Uri.tryParse(rawUrl);
+    if (parsed == null) throw StateError('订阅地址格式无效');
+    final base = Uri.tryParse(_baseUrl ?? '');
+    final resolved = parsed.hasScheme
+        ? parsed
+        : (base == null ? parsed : base.resolveUri(parsed));
+    final query = Map<String, String>.from(resolved.queryParameters);
+    query['flag'] = 'meta';
+    final subscriptionUrl = resolved.replace(queryParameters: query);
+
+    try {
+      final response = await _dio.getUri<String>(
+        subscriptionUrl,
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: const <String, String>{
+            'User-Agent': 'mihomo/1.19.30',
+            'Accept': 'application/yaml,text/yaml,text/plain,*/*',
+          },
+          followRedirects: true,
+        ),
+      );
+      final content = response.data?.trim() ?? '';
+      if (response.statusCode != 200 || content.isEmpty) {
+        throw StateError('获取 Mihomo 订阅失败（${response.statusCode ?? 0}）');
+      }
+      return content;
+    } on DioException catch (error) {
+      // Do not include the subscription URL in errors because it contains the
+      // user's access token.
+      throw StateError(
+        '获取 Mihomo 订阅失败（${error.response?.statusCode ?? 0}）',
+      );
+    }
   }
 
   Future<List<dynamic>?> fetchServerNodes() async {

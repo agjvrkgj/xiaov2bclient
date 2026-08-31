@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.vpn_ui_demo"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "28.0.13004108"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -41,4 +41,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation(project(":core"))
 }

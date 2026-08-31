@@ -13,10 +13,10 @@ process_name: "xuexi"
 package_name: "com.xuexi.app"
 
 # Logo 配置
-# 请将您的 Logo 图片放在 assets/images/logo/ 目录下
+# 请将您的 Logo 图片放在 assets/images/ 目录下
 logo:
   # 通用 Logo (Android, Windows, iOS)
-  image_path: "assets/images/logo/logo.png"
+  image_path: "assets/images/logo.png"
   
   # macOS 专用 Logo (可选，如果不填则使用通用 Logo)
   # macOS 图标通常需要圆角或不同的边距
